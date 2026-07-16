@@ -1,0 +1,285 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum FriendStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+enum BookmarkKind {
+  FAVORITE
+  REVISION
+  COLLECTION
+}
+
+model User {
+  id              String            @id @default(cuid())
+  username        String            @unique
+  email           String            @unique
+  passwordHash    String
+  emailVerified   Boolean           @default(false)
+  displayName     String?
+  bio             String?           @db.Text
+  college         String?
+  github          String?
+  linkedin        String?
+  avatarUrl       String?
+  lastActiveAt    DateTime          @default(now())
+  createdAt       DateTime          @default(now())
+  rooms           RoomParticipant[]
+  messages        Message[]
+  createdRooms    Room[]            @relation("RoomCreator")
+  hostedRooms     Room[]            @relation("RoomHost")
+  aiSessions      AISession[]
+  aiChats         AIChat[]
+  progress        Progress?
+  summaries       SessionSummary[]
+  settings        UserSettings?
+  bookmarks       Bookmark[]
+  notifications   Notification[]    @relation("NotificationRecipient")
+  sentFriendReqs  Friendship[]      @relation("FriendRequester")
+  recvFriendReqs  Friendship[]      @relation("FriendAddressee")
+  refreshTokens   RefreshToken[]
+  collabSessions  CollabSession[]
+  activityEvents  ActivityEvent[]
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model UserSettings {
+  id                     String  @id @default(cuid())
+  userId                 String  @unique
+  theme                  String  @default("light")
+  editorFont             String  @default("JetBrains Mono")
+  fontSize               Int     @default(14)
+  preferredLanguage      String  @default("java")
+  notifyJoins            Boolean @default(true)
+  notifyMentions         Boolean @default(true)
+  notifyFriendRequests   Boolean @default(true)
+  privacyShowOnline      Boolean @default(true)
+  autoJoinVoice          Boolean @default(false)
+  user                   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Friendship {
+  id          String       @id @default(cuid())
+  requesterId String
+  addresseeId String
+  status      FriendStatus @default(PENDING)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  requester   User         @relation("FriendRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  addressee   User         @relation("FriendAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+
+  @@unique([requesterId, addresseeId])
+  @@index([addresseeId, status])
+}
+
+model Bookmark {
+  id         String       @id @default(cuid())
+  userId     String
+  problemId  String?
+  roomId     String?
+  title      String
+  kind       BookmarkKind @default(FAVORITE)
+  collection String?
+  notes      String?
+  createdAt  DateTime     @default(now())
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, kind])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String
+  title     String
+  body      String
+  meta      Json?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User     @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read, createdAt])
+}
+
+model CollabSession {
+  id              String   @id @default(cuid())
+  userId          String
+  roomId          String
+  roomName        String
+  problemTitle    String?
+  participants    String[]
+  durationSec     Int      @default(0)
+  messagesCount   Int      @default(0)
+  problemsSolved  String[] @default([])
+  summary         String?  @db.Text
+  language        String?
+  startedAt       DateTime @default(now())
+  endedAt         DateTime?
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startedAt])
+}
+
+model ActivityEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  kind      String
+  value     Int      @default(1)
+  meta      Json?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, kind, createdAt])
+}
+
+model Problem {
+  id          String     @id @default(cuid())
+  slug        String     @unique
+  title       String
+  difficulty  Difficulty
+  description String     @db.Text
+  examples    Json
+  constraints String[]
+  starterCode String     @db.Text
+  testCases   Json
+  rooms       Room[]
+}
+
+model Room {
+  id              String            @id @default(cuid())
+  code            String            @unique
+  name            String            @default("Coding Session")
+  problemId       String
+  problem         Problem           @relation(fields: [problemId], references: [id])
+  creatorId       String
+  creator         User              @relation("RoomCreator", fields: [creatorId], references: [id])
+  hostId          String
+  host            User              @relation("RoomHost", fields: [hostId], references: [id])
+  sharedCode      String            @default("") @db.Text
+  language        String            @default("java")
+  theme           String            @default("vs-dark")
+  isLocked        Boolean           @default(false)
+  isPrivate       Boolean           @default(false)
+  maxParticipants Int               @default(10)
+  whiteboardData  String            @default("[]") @db.Text
+  screenSharerId  String?
+  createdAt       DateTime          @default(now())
+  participants    RoomParticipant[]
+  messages        Message[]
+  aiSessions      AISession[]
+  summaries       SessionSummary[]
+}
+
+model AISession {
+  id        String   @id @default(cuid())
+  userId    String
+  roomId    String?
+  problemId String?
+  kind      String
+  metadata  Json?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  room      Room?    @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  chats     AIChat[]
+}
+
+model AIChat {
+  id        String    @id @default(cuid())
+  sessionId String
+  userId    String
+  role      String
+  content   String    @db.Text
+  createdAt DateTime  @default(now())
+  session   AISession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Progress {
+  id               String    @id @default(cuid())
+  userId           String    @unique
+  solvedEasy       Int       @default(0)
+  solvedMedium     Int       @default(0)
+  solvedHard       Int       @default(0)
+  topicsMastered   String[]  @default([])
+  weakTopics       String[]  @default([])
+  weeklyStreak     Int       @default(0)
+  longestStreak    Int       @default(0)
+  collaborationScore Int     @default(0)
+  helpScore        Int       @default(0)
+  roomParticipation Int      @default(0)
+  favoriteLanguage String    @default("java")
+  totalSessionSec  Int       @default(0)
+  totalSubmissions Int       @default(0)
+  successfulSubs   Int       @default(0)
+  attempted        Int       @default(0)
+  aiLearningScore  Int       @default(0)
+  languageStats    Json      @default("{}")
+  topicStats       Json      @default("{}")
+  lastSolvedAt     DateTime?
+  updatedAt        DateTime  @updatedAt
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model SessionSummary {
+  id                  String   @id @default(cuid())
+  userId              String
+  roomId              String
+  problemsSolved      String[] @default([])
+  conceptsLearned     String[] @default([])
+  mistakesMade        String[] @default([])
+  topicsToRevise      String[] @default([])
+  homeworkSuggestions String[] @default([])
+  rawSummary          String   @db.Text
+  createdAt           DateTime @default(now())
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  room                Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+}
+
+model RoomParticipant {
+  id          String   @id @default(cuid())
+  roomId      String
+  userId      String
+  cursorColor String
+  presence    String   @default("online")
+  joinedAt    DateTime @default(now())
+  room        Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId])
+}
+
+model Message {
+  id          String   @id @default(cuid())
+  roomId      String
+  userId      String
+  content     String   @db.Text
+  messageType String   @default("text")
+  createdAt   DateTime @default(now())
+  room        Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
