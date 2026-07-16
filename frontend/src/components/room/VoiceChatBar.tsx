@@ -101,7 +101,7 @@ export function VoiceChatBar({
       audio = document.createElement("audio");
       audio.id = `voice-audio-${peerId}`;
       audio.autoplay = true;
-      audio.playsInline = true;
+      audio.setAttribute("playsinline", "true");
       // Must NOT use display:none — some browsers won't play audio in hidden trees
       audio.style.cssText =
         "position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;left:0;bottom:0;";
@@ -257,7 +257,7 @@ export function VoiceChatBar({
     [socket, roomId, cleanupPeer]
   );
 
-  const connectToPeerRef = useRef<(peerId: string) => Promise<void>>();
+  const connectToPeerRef = useRef<((peerId: string) => Promise<void>) | null>(null);
 
   const connectToPeer = useCallback(
     async (peerId: string) => {
