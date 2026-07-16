@@ -11,6 +11,8 @@ interface VoiceChatBarProps {
   onOpenSettings: () => void;
   isLocked?: boolean;
   onSpeakingChange?: (speaking: boolean) => void;
+  /** Floating compact controls for mobile */
+  floating?: boolean;
 }
 
 const ICE_SERVERS: RTCIceServer[] = [
@@ -43,6 +45,7 @@ export function VoiceChatBar({
   onOpenSettings,
   isLocked,
   onSpeakingChange,
+  floating = false,
 }: VoiceChatBarProps) {
   const [micOn, setMicOn] = useState(false);
   const [muted, setMuted] = useState(false);
@@ -534,6 +537,64 @@ export function VoiceChatBar({
     }
   };
 
+  if (floating) {
+    return (
+      <>
+        {(error || needsSoundUnlock || status) && (
+          <div
+            className={`fixed left-3 right-16 top-14 z-[60] rounded-xl px-3 py-1.5 text-center text-[10px] shadow-lg ${
+              error
+                ? "bg-error/90 text-white"
+                : needsSoundUnlock
+                  ? "bg-warning text-black"
+                  : "bg-bg-secondary/95 text-text-secondary"
+            }`}
+          >
+            {error ||
+              (needsSoundUnlock
+                ? "Tap 🔊 to hear others"
+                : status)}
+          </div>
+        )}
+        <div className="fixed bottom-20 right-3 z-[60] flex flex-col gap-2 md:hidden">
+          <button
+            type="button"
+            onClick={onSpeakersClick}
+            className={`flex h-12 w-12 items-center justify-center rounded-full text-lg shadow-lg touch-manipulation ${
+              muted || needsSoundUnlock ? "brand-gradient-bg text-white" : "bg-bg-secondary border border-border"
+            }`}
+            title="Speakers"
+          >
+            {muted ? "🔇" : "🔊"}
+          </button>
+          <button
+            type="button"
+            onClick={() => (micOn ? stopMic() : startMic())}
+            className={`flex h-14 w-14 items-center justify-center rounded-full text-xl shadow-lg touch-manipulation ${
+              micOn ? "bg-success text-white" : "brand-gradient-bg text-white"
+            }`}
+            title="Microphone"
+          >
+            {micOn ? "🎤" : "🎙️"}
+          </button>
+          <button
+            type="button"
+            onClick={onLeave}
+            className="flex h-12 w-12 items-center justify-center rounded-full bg-error text-sm font-bold text-white shadow-lg touch-manipulation"
+            title="Leave"
+          >
+            Leave
+          </button>
+        </div>
+        <div
+          ref={audioContainerRef}
+          className="pointer-events-none fixed bottom-0 left-0 h-px w-px overflow-hidden opacity-0"
+          aria-hidden
+        />
+      </>
+    );
+  }
+
   return (
     <div className="flex flex-col border-t border-border bg-bg-secondary">
       {error && (
@@ -607,7 +668,6 @@ export function VoiceChatBar({
           Leave Room
         </Button>
       </div>
-      {/* Visually hidden but NOT display:none — required for remote audio playback */}
       <div
         ref={audioContainerRef}
         className="pointer-events-none fixed bottom-0 left-0 h-px w-px overflow-hidden opacity-0"

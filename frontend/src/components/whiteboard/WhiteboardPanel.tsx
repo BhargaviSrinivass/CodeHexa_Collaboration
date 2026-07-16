@@ -207,13 +207,19 @@ export function WhiteboardPanel({
     };
   }, [socket]);
 
-  const getPos = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const getPos = (clientX: number, clientY: number) => {
     const rect = canvasRef.current!.getBoundingClientRect();
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    const scaleX = canvasRef.current!.width / Math.max(1, rect.width);
+    const scaleY = canvasRef.current!.height / Math.max(1, rect.height);
+    return {
+      x: (clientX - rect.left) * scaleX,
+      y: (clientY - rect.top) * scaleY,
+    };
   };
 
-  const handleDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const pos = getPos(e);
+  const handleDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const pos = getPos(e.clientX, e.clientY);
     if (tool === "text") {
       const text = window.prompt("Enter text:");
       if (!text) return;
@@ -242,9 +248,9 @@ export function WhiteboardPanel({
     socket?.emit("draw-start", { roomId, stroke });
   };
 
-  const handleMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const handleMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!drawing.current || !current.current) return;
-    const pos = getPos(e);
+    const pos = getPos(e.clientX, e.clientY);
     const stroke = current.current;
     if (stroke.tool === "pencil" || stroke.tool === "eraser") {
       stroke.points.push(pos);
@@ -255,7 +261,14 @@ export function WhiteboardPanel({
     emitDrawUpdate(stroke.id, stroke.points);
   };
 
-  const handleUp = () => {
+  const handleUp = (e?: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e) {
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch {
+        /* ignore */
+      }
+    }
     if (!drawing.current || !current.current) return;
     drawing.current = false;
     socket?.emit("draw-end", { roomId, stroke: current.current });
@@ -275,8 +288,8 @@ export function WhiteboardPanel({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="flex h-[85vh] w-full max-w-5xl flex-col rounded-xl border border-border bg-bg-secondary shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-0 sm:p-4">
+      <div className="flex h-[100dvh] w-full max-w-5xl flex-col rounded-none border-0 border-border bg-bg-secondary shadow-2xl sm:h-[85vh] sm:rounded-xl sm:border">
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <h3 className="font-semibold">Collaborative Whiteboard</h3>
           <Button size="sm" variant="ghost" onClick={onClose}>
@@ -300,7 +313,7 @@ export function WhiteboardPanel({
             <button
               key={c}
               onClick={() => setColor(c)}
-              className={`h-6 w-6 rounded-full border-2 ${color === c ? "border-white" : "border-transparent"}`}
+              className={`h-7 w-7 rounded-full border-2 touch-manipulation ${color === c ? "border-white" : "border-transparent"}`}
               style={{ backgroundColor: c }}
             />
           ))}
@@ -309,7 +322,7 @@ export function WhiteboardPanel({
             <button
               key={s}
               onClick={() => setSize(s)}
-              className={`rounded px-2 py-1 text-xs ${size === s ? "bg-accent text-white" : "bg-bg-tertiary"}`}
+              className={`rounded px-2 py-1.5 text-xs touch-manipulation ${size === s ? "bg-accent text-white" : "bg-bg-tertiary"}`}
             >
               {s}px
             </button>
@@ -333,11 +346,12 @@ export function WhiteboardPanel({
 
         <canvas
           ref={canvasRef}
-          className="flex-1 cursor-crosshair"
-          onMouseDown={handleDown}
-          onMouseMove={handleMove}
-          onMouseUp={handleUp}
-          onMouseLeave={handleUp}
+          className="flex-1 touch-none cursor-crosshair"
+          onPointerDown={handleDown}
+          onPointerMove={handleMove}
+          onPointerUp={handleUp}
+          onPointerCancel={handleUp}
+          onPointerLeave={handleUp}
         />
       </div>
     </div>
@@ -348,7 +362,7 @@ export function WhiteboardButton({ onClick }: { onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="fixed bottom-20 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-accent text-2xl shadow-lg transition-transform hover:scale-105 hover:bg-accent-hover"
+      className="fixed bottom-24 right-4 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-accent text-xl shadow-lg transition-transform hover:scale-105 hover:bg-accent-hover sm:bottom-20 sm:right-6 sm:h-14 sm:w-14 sm:text-2xl lg:flex"
       title="Open Whiteboard"
     >
       🎨

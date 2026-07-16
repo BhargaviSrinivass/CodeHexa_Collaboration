@@ -27,6 +27,9 @@ import { Button, DifficultyBadge } from "../components/ui";
 import { useRoomSocket, SyncStatePayload } from "../hooks/useRoomSocket";
 import { ScreenSharePanel } from "../components/room/ScreenSharePanel";
 import { useTheme } from "../contexts/ThemeContext";
+import { useBreakpoint } from "../hooks/useBreakpoint";
+import { PresenceBanner } from "../components/room/PresenceBanner";
+import { RoomMobileTabs, RoomMobileTab } from "../components/room/RoomMobileTabs";
 
 interface RoomPageProps {
   roomId: string;
@@ -67,9 +70,24 @@ export function RoomPage({ roomId }: RoomPageProps) {
   const [testHeight, setTestHeight] = useState(220);
   const [screenSharerId, setScreenSharerId] = useState<string | null>(null);
   const [screenSharerName, setScreenSharerName] = useState("");
+  const [mobileTab, setMobileTab] = useState<RoomMobileTab>("code");
+  const [editingLines, setEditingLines] = useState<Record<string, number>>({});
   const sessionStartRef = useRef(Date.now());
   const solvedProblemsRef = useRef<string[]>([]);
   const { settings } = useTheme();
+  const { isMobile, isTablet, isDesktop } = useBreakpoint();
+
+  // Tablet defaults to collapsed collaboration sidebar
+  useEffect(() => {
+    if (isTablet) setSidebarCollapsed(true);
+    if (isDesktop) setSidebarCollapsed(false);
+  }, [isTablet, isDesktop]);
+
+  useEffect(() => {
+    if (mobileTab === "whiteboard") {
+      setWhiteboardOpen(true);
+    }
+  }, [mobileTab]);
 
   const isHost = user?.id === hostId;
   const readOnly = isLocked && !isHost;
@@ -167,13 +185,30 @@ export function RoomPage({ roomId }: RoomPageProps) {
       pushToast(data.message, "info");
       setAiOpen(true);
     };
+    const onCursor = (data: {
+      userId: string;
+      username?: string;
+      position?: { lineNumber?: number };
+    }) => {
+      if (data.userId === user?.id) return;
+      const line = data.position?.lineNumber;
+      if (!line) return;
+      const key = data.username || data.userId;
+      setEditingLines((prev) =>
+        prev[key] === line ? prev : { ...prev, [key]: line, [data.userId]: line }
+      );
+    };
     socket.on("voice-state", onVoice);
     socket.on("room-ai-nudge", onNudge);
+    socket.on("cursor-update", onCursor);
+    socket.on("cursor-move", onCursor);
     return () => {
       socket.off("voice-state", onVoice);
       socket.off("room-ai-nudge", onNudge);
+      socket.off("cursor-update", onCursor);
+      socket.off("cursor-move", onCursor);
     };
-  }, [socket, pushToast]);
+  }, [socket, pushToast, user?.id]);
 
   // Presence: idle detection + activity states
   useEffect(() => {
@@ -388,12 +423,13 @@ export function RoomPage({ roomId }: RoomPageProps) {
   }
 
   return (
-    <div ref={roomContainerRef} className="relative flex h-screen flex-col">
+    <div ref={roomContainerRef} className="relative flex h-[100dvh] flex-col overflow-hidden">
       <LiveCursorsOverlay
         roomId={roomId}
         socket={socket}
         containerRef={roomContainerRef}
         participants={participants}
+        enabled={!isMobile}
       />
 
       {(reconnecting || !connected) && (
@@ -402,63 +438,74 @@ export function RoomPage({ roomId }: RoomPageProps) {
         </div>
       )}
 
-      <header className="flex items-center justify-between border-b border-border bg-bg-secondary px-4 py-2">
-        <div className="flex items-center gap-3">
+      <header className="flex items-center justify-between gap-2 border-b border-border bg-bg-secondary px-2 py-2 sm:px-4">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           <button
-            className="rounded px-2 text-text-secondary hover:bg-bg-tertiary"
+            className="hidden rounded px-2 text-text-secondary hover:bg-bg-tertiary md:inline"
             onClick={() => setSidebarCollapsed((v) => !v)}
             title="Toggle sidebar"
           >
             ☰
           </button>
-          <div>
-            <h1 className="font-semibold">{roomName}</h1>
-            <div className="flex items-center gap-2 text-xs text-text-secondary">
-              <span>{problem.title}</span>
+          <div className="min-w-0">
+            <h1 className="truncate text-sm font-semibold sm:text-base">{roomName}</h1>
+            <div className="flex items-center gap-2 text-[10px] text-text-secondary sm:text-xs">
+              <span className="truncate">{problem.title}</span>
               <DifficultyBadge difficulty={problem.difficulty} />
               {isLocked && <span>🔒</span>}
-              {isPrivate && <span>Private</span>}
             </div>
           </div>
-          <span className="rounded bg-bg-tertiary px-2 py-0.5 font-mono text-xs">{roomCode}</span>
+          <span className="hidden rounded bg-bg-tertiary px-2 py-0.5 font-mono text-xs sm:inline">
+            {roomCode}
+          </span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1 sm:gap-2">
           <select
             value={language}
             onChange={(e) => handleLanguageChange(e.target.value as Language)}
             disabled={readOnly}
-            className="rounded border border-border bg-bg-primary px-2 py-1 text-xs disabled:opacity-50"
+            className="max-w-[5.5rem] rounded border border-border bg-bg-primary px-1 py-1 text-[10px] disabled:opacity-50 sm:max-w-none sm:px-2 sm:text-xs"
           >
             <option value="java">Java</option>
             <option value="python">Python</option>
             <option value="cpp">C++</option>
-            <option value="javascript">JavaScript</option>
+            <option value="javascript">JS</option>
           </select>
           <select
             value={theme}
             onChange={(e) => handleThemeChange(e.target.value as EditorTheme)}
-            className="rounded border border-border bg-bg-primary px-2 py-1 text-xs"
+            className="hidden rounded border border-border bg-bg-primary px-2 py-1 text-xs sm:block"
           >
             <option value="vs-dark">Dark</option>
             <option value="light">Light</option>
-            <option value="hc-black">High Contrast</option>
+            <option value="hc-black">HC</option>
           </select>
-          <Button size="sm" variant="secondary" onClick={() => setAiOpen((v) => !v)}>
-            ✨ AI
+          <Button size="sm" variant="secondary" className="!px-2" onClick={() => setAiOpen((v) => !v)}>
+            AI
           </Button>
-          <span className={`text-xs ${connected ? "text-success" : "text-error"}`}>
+          <span className={`hidden text-xs sm:inline ${connected ? "text-success" : "text-error"}`}>
             {connected ? "● Live" : "○ Offline"}
           </span>
-          <Button size="sm" variant="secondary" onClick={() => setSettingsOpen(true)}>
+          <Button size="sm" variant="secondary" className="!px-2" onClick={() => setSettingsOpen(true)}>
             Invite
           </Button>
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
+      {(isMobile || isTablet) && (
+        <PresenceBanner
+          participants={participants}
+          typingUsers={typingUsers}
+          currentUserId={user?.id}
+          editingLines={editingLines}
+        />
+      )}
+
+      {/* ===== Desktop / tablet three-column ===== */}
+      <div className={`min-h-0 flex-1 overflow-hidden ${isMobile ? "hidden" : "flex"}`}>
         <div
           style={{ width: `${leftWidth}%` }}
-          className="overflow-y-auto border-r border-border p-4 transition-[width] duration-150"
+          className="overflow-y-auto border-r border-border p-3 sm:p-4"
         >
           <div className="mb-4 whitespace-pre-wrap text-sm leading-relaxed text-text-secondary">
             {formatDescription(problem.description || "")}
@@ -504,7 +551,7 @@ export function RoomPage({ roomId }: RoomPageProps) {
             onMouseDown={startResizeTest}
             className="h-1 cursor-row-resize bg-border hover:bg-accent"
           />
-          <div style={{ height: testHeight }}>
+          <div style={{ height: isTablet ? Math.min(testHeight, 200) : testHeight }}>
             <TestCasePanel
               customInput={customInput}
               onCustomInputChange={setCustomInput}
@@ -519,7 +566,7 @@ export function RoomPage({ roomId }: RoomPageProps) {
         </div>
 
         {!sidebarCollapsed && (
-          <aside className="flex w-64 shrink-0 flex-col border-l border-border bg-bg-secondary">
+          <aside className="flex w-56 shrink-0 flex-col border-l border-border bg-bg-secondary xl:w-64">
             <Participants
               participants={participants}
               hostId={hostId}
@@ -562,21 +609,168 @@ export function RoomPage({ roomId }: RoomPageProps) {
         )}
       </div>
 
-      <VoiceChatBar
-        roomId={roomId}
-        socket={socket}
-        userId={user?.id}
-        autoJoin={settings?.autoJoinVoice}
-        onLeave={handleLeave}
-        onOpenSettings={() => setSettingsOpen(true)}
-        isLocked={isLocked}
-      />
+      {/* ===== Mobile tab panes ===== */}
+      {isMobile && (
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          {mobileTab === "problem" && (
+            <div className="flex-1 overflow-y-auto p-4">
+              <div className="mb-4 whitespace-pre-wrap text-sm leading-relaxed text-text-secondary">
+                {formatDescription(problem.description || "")}
+              </div>
+              {problem.examples?.map((ex, i) => (
+                <div key={i} className="mb-3 rounded-xl border border-border bg-bg-secondary p-3 text-sm">
+                  <p className="mb-1 font-medium">Example {i + 1}:</p>
+                  <div className="text-text-secondary">Input: {ex.input}</div>
+                  <div className="text-text-secondary">Output: {ex.output}</div>
+                </div>
+              ))}
+            </div>
+          )}
 
-      <AIPanelButton onClick={() => setAiOpen(true)} />
-      <WhiteboardButton onClick={() => setWhiteboardOpen(true)} />
+          {mobileTab === "code" && (
+            <div className="flex min-h-0 flex-1 flex-col">
+              <div className="min-h-0 flex-1">
+                <MonacoCollab
+                  roomId={roomId}
+                  code={code}
+                  onCodeChange={handleCodeChange}
+                  participants={participants}
+                  language={language}
+                  theme={theme}
+                  readOnly={readOnly}
+                  onSelectionChange={setSelection}
+                  onExplainSelection={(text) => {
+                    setSelection(text);
+                    setAiOpen(true);
+                  }}
+                />
+              </div>
+              <div className="h-[38%] min-h-[140px] border-t border-border">
+                <TestCasePanel
+                  customInput={customInput}
+                  onCustomInputChange={setCustomInput}
+                  runResult={runResult}
+                  running={running}
+                  onRunTests={() => run("tests")}
+                  onRunCustom={() => run("custom")}
+                  activeTab={testTab}
+                  onTabChange={setTestTab}
+                />
+              </div>
+            </div>
+          )}
+
+          {mobileTab === "chat" && (
+            <div className="flex min-h-0 flex-1 flex-col">
+              <Chat
+                messages={messages}
+                onSend={handleSendChat}
+                onTypingStart={handleTypingStart}
+                onTypingStop={emitTypingStop}
+                typingUsers={typingUsers}
+              />
+            </div>
+          )}
+
+          {mobileTab === "whiteboard" && (
+            <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+              <p className="text-sm text-text-secondary">Open the full-screen whiteboard</p>
+              <Button onClick={() => setWhiteboardOpen(true)}>Open Whiteboard</Button>
+            </div>
+          )}
+
+          {mobileTab === "room" && (
+            <div className="flex-1 overflow-y-auto">
+              <Participants
+                participants={participants}
+                hostId={hostId}
+                currentUserId={user?.id}
+                isHost={isHost}
+                onRemove={(id) => socket?.emit("remove-participant", { roomId, targetUserId: id })}
+                onTransferHost={(id) => socket?.emit("transfer-host", { roomId, targetUserId: id })}
+              />
+              <ScreenSharePanel
+                roomId={roomId}
+                socket={socket}
+                userId={user?.id}
+                sharerId={screenSharerId}
+                sharerName={screenSharerName}
+              />
+              <div className="p-4">
+                <Button className="w-full" variant="secondary" onClick={() => setSettingsOpen(true)}>
+                  Invite / Room settings
+                </Button>
+                <Button className="mt-2 w-full" onClick={() => setAiOpen(true)}>
+                  Open AI Assistant
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {aiOpen && (
+            <AIPanel
+              open={aiOpen}
+              onClose={() => setAiOpen(false)}
+              roomId={roomId}
+              problemTitle={problem.title}
+              problemDescription={problem.description || ""}
+              problemId={problem.id}
+              difficulty={problem.difficulty}
+              code={code}
+              language={language}
+              selection={selection}
+              lastRunError={{ stderr: runResult?.stderr, stdout: runResult?.stdout }}
+            />
+          )}
+        </div>
+      )}
+
+      {/* Desktop / tablet voice bar */}
+      {!isMobile && (
+        <VoiceChatBar
+          roomId={roomId}
+          socket={socket}
+          userId={user?.id}
+          autoJoin={settings?.autoJoinVoice}
+          onLeave={handleLeave}
+          onOpenSettings={() => setSettingsOpen(true)}
+          isLocked={isLocked}
+        />
+      )}
+
+      {/* Mobile floating voice */}
+      {isMobile && (
+        <VoiceChatBar
+          roomId={roomId}
+          socket={socket}
+          userId={user?.id}
+          autoJoin={settings?.autoJoinVoice}
+          onLeave={handleLeave}
+          onOpenSettings={() => setSettingsOpen(true)}
+          isLocked={isLocked}
+          floating
+        />
+      )}
+
+      {!isMobile && <AIPanelButton onClick={() => setAiOpen(true)} />}
+      {!isMobile && <WhiteboardButton onClick={() => setWhiteboardOpen(true)} />}
+
+      {isMobile && (
+        <RoomMobileTabs
+          active={mobileTab}
+          onChange={(tab) => {
+            setMobileTab(tab);
+            if (tab === "whiteboard") setWhiteboardOpen(true);
+          }}
+        />
+      )}
+
       <WhiteboardPanel
         open={whiteboardOpen}
-        onClose={() => setWhiteboardOpen(false)}
+        onClose={() => {
+          setWhiteboardOpen(false);
+          if (isMobile && mobileTab === "whiteboard") setMobileTab("code");
+        }}
         roomId={roomId}
         socket={socket}
         initialStrokes={whiteboardStrokes}
@@ -592,7 +786,7 @@ export function RoomPage({ roomId }: RoomPageProps) {
         isLocked={isLocked}
         roomCode={roomCode}
         inviteLink={inviteLink}
-        onSave={(settings) => socket?.emit("room-settings-update", { roomId, settings })}
+        onSave={(s) => socket?.emit("room-settings-update", { roomId, settings: s })}
         onLock={() => socket?.emit("room-lock", { roomId })}
         onUnlock={() => socket?.emit("room-unlock", { roomId })}
       />

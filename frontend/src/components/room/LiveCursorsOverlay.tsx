@@ -17,6 +17,8 @@ interface LiveCursorsOverlayProps {
   socket: Socket | null;
   containerRef: React.RefObject<HTMLElement | null>;
   participants: Participant[];
+  /** Disable mouse cursor tracking (e.g. on mobile) */
+  enabled?: boolean;
 }
 
 export const LiveCursorsOverlay = memo(function LiveCursorsOverlay({
@@ -24,6 +26,7 @@ export const LiveCursorsOverlay = memo(function LiveCursorsOverlay({
   socket,
   containerRef,
   participants,
+  enabled = true,
 }: LiveCursorsOverlayProps) {
   const { user } = useAuth();
   const [cursors, setCursors] = useState<Map<string, PointerCursor>>(new Map());
@@ -31,6 +34,7 @@ export const LiveCursorsOverlay = memo(function LiveCursorsOverlay({
     participants.find((p) => p.id === user?.id)?.cursorColor || "#3b82f6";
 
   const emitPointer = useThrottle((x: number, y: number) => {
+    if (!enabled) return;
     socket?.emit("pointer-move", {
       roomId,
       x,
@@ -40,7 +44,7 @@ export const LiveCursorsOverlay = memo(function LiveCursorsOverlay({
   }, 40);
 
   useEffect(() => {
-    if (!socket) return;
+    if (!enabled || !socket) return;
 
     const onPointer = (data: {
       userId: string;
@@ -80,10 +84,11 @@ export const LiveCursorsOverlay = memo(function LiveCursorsOverlay({
       socket.off("participant-left", onLeft);
       socket.off("user-left", onLeft);
     };
-  }, [socket, user?.id]);
+  }, [socket, user?.id, enabled]);
 
   // Track mouse anywhere over the room viewport (including Monaco)
   useEffect(() => {
+    if (!enabled) return;
     const el = containerRef.current;
     if (!el || !socket) return;
 
@@ -104,7 +109,9 @@ export const LiveCursorsOverlay = memo(function LiveCursorsOverlay({
 
     window.addEventListener("mousemove", onMove, { passive: true });
     return () => window.removeEventListener("mousemove", onMove);
-  }, [socket, containerRef, emitPointer]);
+  }, [socket, containerRef, emitPointer, enabled]);
+
+  if (!enabled) return null;
 
   return (
     <div className="pointer-events-none absolute inset-0 z-[80] overflow-hidden">
